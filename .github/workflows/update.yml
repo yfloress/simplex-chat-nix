@@ -1,0 +1,42 @@
+name: update
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v31
+
+      - name: Look for a new release
+        id: update
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          old=$(jq -r .version source.json)
+          new=$(./update.sh)
+          echo "old=$old" >> "$GITHUB_OUTPUT"
+          echo "new=$new" >> "$GITHUB_OUTPUT"
+
+      # Downloads the binary and checks it against the hash before committing.
+      - name: Build
+        if: steps.update.outputs.old != steps.update.outputs.new
+        run: |
+          nix build .#default
+          ./result/bin/simplex-chat --version
+
+      - name: Commit
+        if: steps.update.outputs.old != steps.update.outputs.new
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore(simplex-chat): update ${{ steps.update.outputs.old }} -> ${{ steps.update.outputs.new }}"
+          git push
